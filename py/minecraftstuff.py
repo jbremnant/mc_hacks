@@ -2,9 +2,9 @@
 #github.com/martinohanlon/minecraft-stuff
 #Raspberry Pi, Minecraft - Minecraft 'stuff' extensions
 
-import modded.mcpi.minecraft as minecraft
-import modded.mcpi.block as block
-import modded.mcpi.util as util
+import mcpi.minecraft as minecraft
+import mcpi.block as block
+import mcpi.util as util
 from copy import deepcopy
 import time
 import math

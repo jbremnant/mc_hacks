@@ -1,12 +1,10 @@
 #!/home/jbkim/anaconda3/bin/python
 import os, sys
-sys.path.append('/opt/minecraft/tools/mcpi_hacks')
 import math
 import time
 import argparse
 import mcpi.minecraft as minecraft
 import mcpi.block as block
-import minecraftstuff as mcstuff
 
 # Block Orientation
 #   x : width
@@ -272,6 +270,7 @@ def do_pixel(args, mc):
 
 def do_cube(args, mc):
   #test shape
+  import minecraftstuff as mcstuff
   sz = args.size
   pos = mc.player.getTilePos()
   pos.y += 2*sz
