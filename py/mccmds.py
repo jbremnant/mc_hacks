@@ -12,15 +12,18 @@ import mcpi.block as block
 #   z : depth
 
 def do_where(args, mc, do_print=True):
-  elist = mc.getPlayerEntityIds()
   data = []
-  for e in elist:
-    pos = mc.entity.getTilePos(e)
-    p = {'name': mc.entity.getName(e), 'id': e,
-         'x': int(pos.x), 'y': int(pos.y), 'z': int(pos.z)}
-    data.append(p)
-    if do_print:
-      print("{}[{}]: {}".format(p['name'], p['id'], pos))
+  try:
+    elist = mc.getPlayerEntityIds()
+    for e in elist:
+      pos = mc.entity.getTilePos(e)
+      p = {'name': mc.entity.getName(e), 'id': e,
+           'x': int(pos.x), 'y': int(pos.y), 'z': int(pos.z)}
+      data.append(p)
+      if do_print:
+        print("{}[{}]: {}".format(p['name'], p['id'], pos))
+  except:
+    pass
   return data
 
 
@@ -29,33 +32,37 @@ def do_show(args, mc):
   import curses
 
   class Coord(object):
-    def __init__(self, xmin, xmax, ymin, ymax, screen_xsize, screen_ysize, radius=10):
-      self.radius =  radius
-      self.xmin = xmin - radius
-      self.xmax = xmax + radius
-      self.ymin = ymin - radius
-      self.ymax = ymax + radius
+    def __init__(self, xmin, xmax, ymin, ymax, screen_xsize, screen_ysize):
+      self.xmin = xmin
+      self.xmax = xmax
+      self.ymin = ymin
+      self.ymax = ymax
       self.screen_xsize = screen_xsize
       self.screen_ysize = screen_ysize
     def updateScreenSize( self, rows, cols ):
       if rows!=self.screen_xsize: self.screen_xsize = rows
       if cols!=self.screen_ysize: self.screen_ysize = cols
+    def setXYRange( self, xmin, xmax, ymin, ymax ):
+      self.xmin = xmin
+      self.xmax = xmax
+      self.ymin = ymin
+      self.ymax = ymax
     def getXRange( self ):
       return (self.xmin, self.xmax)
     def getYRange( self ):
       return (self.ymin, self.ymax)
     def getScreenCoord( self, xpos, ypos ):
-      if xpos < self.xmin: self.xmin = xpos - self.radius
-      if xpos > self.xmax: self.xmax = xpos + self.radius
-      if ypos < self.ymin: self.ymin = ypos - self.radius
-      if ypos > self.ymax: self.ymax = ypos + self.radius
+      if self.xmin is None or xpos < self.xmin: self.xmin = xpos - 5
+      if self.xmax is None or xpos > self.xmax: self.xmax = xpos + 5
+      if self.ymin is None or ypos < self.ymin: self.ymin = ypos - 2
+      if self.ymax is None or ypos > self.ymax: self.ymax = ypos + 2
       xspan = self.xmax - self.xmin
       yspan = self.ymax - self.ymin
       xrelpos = (xpos - self.xmin) / xspan
       yrelpos = (ypos - self.ymin) / yspan
       # print(f"xrange: ({self.xmin}:{self.xmax}), yrange: ({self.ymin}:{self.ymax}), position: {xpos}, {ypos} -> {xrelpos}, {yrelpos}")
-      return (min(max(1, int(self.screen_xsize*xrelpos)), self.screen_xsize-2),
-              min(max(1, int(self.screen_ysize*yrelpos)), self.screen_ysize-2))
+      return (max(1, min(int(self.screen_xsize*xrelpos), self.screen_xsize-2)),
+              max(1, min(int(self.screen_ysize*yrelpos), self.screen_ysize-2)))
 
   if args.do_screen:
     s = curses.initscr()
@@ -70,32 +77,57 @@ def do_show(args, mc):
     curses.init_pair(4, curses.COLOR_YELLOW, curses.COLOR_BLACK)
     curses.init_pair(5, curses.COLOR_BLACK, curses.COLOR_WHITE)
 
-  loc = Coord(0, 0, 0, 0, 50, 50)
+  tsize = os.get_terminal_size()
+  loc = Coord(None, None, None, None, tsize.lines, tsize.columns)
 
+  i = 0
   while True:
     elist = do_where(args, mc, False)
+    if len(elist) == 0:
+      time.sleep(0.5)
+      continue
     tsize = os.get_terminal_size()
     rows, cols = s.getmaxyx() if args.do_screen else (tsize.lines, tsize.columns)
     loc.updateScreenSize(rows, cols)
+    # periodically set the max range
+    if i % 20 == 0:
+      xlist = [e['x'] for e in elist]
+      ylist = [e['y'] for e in elist]
+      xmin, xmax = min(xlist), max(xlist)
+      ymin, ymax = min(ylist), max(ylist)
+      loc.setXYRange(xmin-5, xmax+5, ymin-2, ymax+2)
+    i += 1
 
     if args.do_screen:
       s.clear()
       s.border(0)
       s.addstr(0, 3, "Player Coordinates", curses.A_BOLD|curses.color_pair(1))
-      s.addstr(0, 22, "[x:{} y:{}]".format(loc.getXRange(), loc.getYRange()),
+      s.addstr(0, 22, "[cnt:{} x:{} y:{}]".format(len(elist), loc.getXRange(), loc.getYRange()),
                curses.color_pair(1))
 
+    labelxs = {}
     for e in elist:
       sx, sy = loc.getScreenCoord( e['x'], e['z'] )
       if args.do_screen:
         s.addstr(sx, sy, 'x', curses.color_pair(3))
-        s.addstr(sx, sy+2, "{} ({},{},{})".format(e['name'], e['x'], e['y'], e['z']),
-                 curses.A_NORMAL)
+        labelmsg = "{} ({},{},{})".format(e['name'], e['x'], e['y'], e['z'])
+        # flip the label along column if out of bounds
+        labely = sy + 2
+        if (labely+len(labelmsg)) >= cols:
+          labely = sy - (len(labelmsg) + 1)
+        # avoid overlap along rows if they are in the same on the screen
+        labelx = sx + len(labelxs) if sx in labelxs else sx
+        labelxs[sx] = True
+        if labelx >= rows:
+          labelx -= (labelx - rows + 2)
+          if labelx in labelxs:
+            labelx -= len(labelxs)
+        s.addstr(labelx, labely, "{} ({},{},{})".format(e['name'], e['x'], e['y'], e['z']))
       else:
         print("{} ({},{},{}) scr({},{}) scrpos({},{})".format(
           e['name'], e['x'], e['y'], e['z'], rows, cols, sx, sy))
      
-    time.sleep(0.1) 
+    time.sleep(0.05) 
     if args.do_screen:
       s.refresh()
       ch = s.getch()
@@ -115,22 +147,22 @@ def do_rainbow(args, mc):
   playerdir = mc.player.getDirection()
   dsign = -1 if playerdir.z < 0  else 1
   print("player currently in {}".format(playerpos))
-  w = args.width + int(playerpos.x)
-  h = args.height + int(playerpos.y)
-  d = 20 + int(dsign*playerpos.z) # some offset from where the player is
+  x0 = playerpos.x - args.width
+  y0 = playerpos.y + args.height
+  z = dsign*(10 + playerpos.z) # some offset from where the player is
   colors = [14, 1, 4, 5, 3, 11, 10]
   height = args.height
   # wipe clean the area: block.id == 0 is air (erase) 
-  mc.setBlocks(-w,0,d, w,h+len(colors),d, 0)
+  mc.setBlocks(x0,0,z, x0+2*args.width,args.height+len(colors),z, 0)
   if args.erase:
     return
   # draw the rainbow
-  for xidx in range(0, w*2):
+  for xidx in range(0, args.width*2):
+    x = x0 + xidx
     for colourindex in range(0, len(colors)):
-      y = math.sin((xidx / (w*2)) * math.pi) * height + colourindex
-      x = xidx - w
-      z = d
+      y = math.sin((xidx / (args.width*2)) * math.pi) * y0 + colourindex
       cl = colors[len(colors)-1-colourindex] 
+      print(f"setting rainbow {x}, {y}, {z}")
       mc.setBlock(x, y, z, block.WOOL.id, cl)
 
 
